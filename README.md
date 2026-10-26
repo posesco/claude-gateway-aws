@@ -57,6 +57,12 @@ Infraestructura como Código (100% **Terraform**) para desplegar el **Claude App
                                                                         +-----------------------+----------------+--+
 ```
 
+![Arquitectura AWS multi-cuenta: Cognito, acceso privado Tailscale, ALB interno, gateway ECS Fargate, RDS, Bedrock y observabilidad](media/architecture.svg)
+
+[Abrir a tamaño completo](media/architecture.svg) · [Editar en draw.io](media/architecture.drawio) · [Cómo editar y regenerar](media/README.md)
+
+El diagrama representa la arquitectura declarada en Terraform y sus valores por defecto. Para regenerar el SVG y el archivo editable: `python3 scripts/generate_architecture.py`.
+
 ### Flujo Paso a Paso
 1. **Resolución DNS y Enrutamiento Privado:** El desarrollador ejecuta `claude` en su portátil con el cliente **Tailscale** conectado. Al invocar `https://aidevtool.midominio.com`, Cloudflare devuelve un registro `CNAME` (`proxied = false`) que apunta al nombre DNS del **ALB Interno** de AWS (`internal-...eu-west-1.elb.amazonaws.com`), el cual resuelve a IPs privadas (`10.20.11.x` / `10.20.12.x`).
 2. **Túnel Tailscale:** El portátil encamina automáticamente los paquetes dirigidos a `10.20.0.0/16` a través del nodo `aws-claude-gateway-router` (`t4g.nano` en la Cuenta B) hasta el puerto `443` del ALB Interno, presentando un certificado TLS público válido emitido por AWS ACM.
