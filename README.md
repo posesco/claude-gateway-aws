@@ -43,8 +43,9 @@ Infraestructura como Código (100% **Terraform**) para desplegar el **Claude App
                                                    +--------------------+--| ECS Fargate (256 CPU / 512 MB)      |  |
                                                      JWKS / Token       |  | assign_public_ip = true             |  |
                                                                         |  | SG: Solo acepta 8080 desde el ALB   |  |
-                                                                        |  |  1) initContainer: db-quota-seeder  |  |
-                                                                        |  |  2) mainContainer: claude-gateway   |  |
+                                                                        |  |  1) init: gateway-config-sync      |  |
+                                                                        |  |  2) init: db-quota-seeder          |  |
+                                                                        |  |  3) main: claude-gateway           |  |
                                                                         |  +---------+-----------------+---------+  |
                                                                         |            |                 |            |
                                                                         |  SQL 5432  |                 | HTTPS 443  |
@@ -67,7 +68,7 @@ El diagrama representa la arquitectura declarada en Terraform y sus valores por 
 1. **Resolución DNS y Enrutamiento Privado:** El desarrollador ejecuta `claude` en su portátil con el cliente **Tailscale** conectado. Al invocar `https://aidevtool.midominio.com`, Cloudflare devuelve un registro `CNAME` (`proxied = false`) que apunta al nombre DNS del **ALB Interno** de AWS (`internal-...eu-west-1.elb.amazonaws.com`), el cual resuelve a IPs privadas (`10.20.11.x` / `10.20.12.x`).
 2. **Túnel Tailscale:** El portátil encamina automáticamente los paquetes dirigidos a `10.20.0.0/16` a través del nodo `aws-claude-gateway-router` (`t4g.nano` en la Cuenta B) hasta el puerto `443` del ALB Interno, presentando un certificado TLS público válido emitido por AWS ACM.
 3. **Autenticación OIDC Multi-Cuenta:** Al ejecutar `claude /login`, el Gateway redirige al navegador hacia el Hosted UI de **Amazon Cognito en la Cuenta A**. Tras autenticarse, la función **Lambda Pre-Token Generation** inyecta los grupos del usuario (`cognito:groups` $\rightarrow$ `groups`: `["DevSenior"]` o `["DevJunior"]`) directamente en el ID Token OIDC.
-4. **Control de Gasto Mensual (DB Seeding + Configuración Declarativa):** En cada arranque de la tarea ECS Fargate, el contenedor de inicialización `db-quota-seeder` (`postgres:16-alpine`) ejecuta una transacción SQL idempotente (`ON CONFLICT DO UPDATE`) sobre RDS PostgreSQL que registra los límites mensuales de **$10.00 USD** (`1000` centavos) para `DevSenior` y **$5.00 USD** (`500` centavos) para `DevJunior`, además de inyectar `gateway.yaml` desde SSM Parameter Store.
+4. **Control de Gasto Mensual (DB Seeding + Configuración Declarativa):** Terraform guarda `gateway.yaml` y `seed_quotas.sql` renderizados en el bucket S3 privado de configuración. Al arrancar ECS, `gateway-config-sync` descarga ambos archivos; después `db-quota-seeder` (`postgres:16-alpine`) ejecuta desde el archivo una transacción SQL idempotente (`ON CONFLICT DO UPDATE`) sobre RDS PostgreSQL que registra los límites mensuales de **$10.00 USD** (`1000` centavos) para `DevSenior` y **$5.00 USD** (`500` centavos) para `DevJunior`. El Gateway comienza cuando termina el seeding.
 5. **Inferencia Segura en Amazon Bedrock:** Si el grupo del desarrollador no ha superado su presupuesto mensual, la tarea ECS Fargate asume su `task_role_arn` e invoca los perfiles de inferencia europeos (`eu.anthropic.claude-sonnet-4-6`, `eu.anthropic.claude-opus-4-6-v1`, `eu.anthropic.claude-haiku-4-5-20251001-v1:0`) en **Amazon Bedrock (`eu-west-1`)** sin que el portátil tenga jamás credenciales de AWS.
 
    > **Selector `/model` de Claude Code:** Claude Code CLI valida `availableModels` contra su catálogo canónico (`claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5`). Los IDs de perfiles regionales con prefijo `eu.anthropic.*` no coinciden con la expresión regular del CLI y son omitidos del selector (Sonnet 4.6 solo aparecía porque estaba forzado en `model:` como modelo activo). En [config/gateway.yaml.tftpl](config/gateway.yaml.tftpl), el Gateway expone los nombres canónicos al CLI y los mapea internamente al upstream de Bedrock (`upstream_model: { bedrock: eu.anthropic... }`). Tras aplicar cambios con `terraform apply`, ejecuta `claude /login` en tu terminal para sincronizar las nuevas políticas gestionadas.
@@ -124,7 +125,7 @@ Este repositorio **automatiza el ciclo completo de extremo a extremo** sin que n
    - **Etapa 1 (`downloader`):** Descarga la versión solicitada (`latest` o fija mediante `claude_binary_version`) desde `https://downloads.claude.ai/claude-code-releases`, extrae el hash oficial desde `manifest.json` y **verifica criptográficamente el checksum SHA-256** del binario `claude` antes de instalarlo. Además descarga el bundle oficial de certificados CA de Amazon RDS (`rds-global-bundle.pem`).
    - **Etapa 2 (Runtime sin privilegios):** Crea un contenedor ligero `debian:bookworm-slim` con `python3` ejecutado bajo el usuario sin privilegios `65532:65532` (`gateway`), con `NODE_EXTRA_CA_CERTS=/etc/claude/rds-global-bundle.pem`.
 2. **`docker/entrypoint.sh` y `docker/gateway_proxy_loki.py`:**
-   - Materializa automáticamente la variable de entorno `GATEWAY_CONFIG_YAML` (inyectada por ECS Fargate desde AWS SSM Parameter Store) en `/etc/claude/gateway.yaml` asignando el puerto interno `8081` al proceso `claude gateway`, mientras `gateway_proxy_loki.py` escucha en `0.0.0.0:8080`, reenvía en streaming (SSE) hacia `127.0.0.1:8081`, captura los prompts de usuario en `POST /v1/messages` (`evt = "user.prompt"`) y envía todos los logs estructurados a **Loki** (`http://loki.claude-gateway-lab.internal:3100/loki/api/v1/push`).
+   - Copia el archivo descargado desde S3 en `/etc/claude/gateway.yaml` y asigna el puerto interno `8081` al proceso `claude gateway`, mientras `gateway_proxy_loki.py` escucha en `0.0.0.0:8080`, reenvía en streaming (SSE) hacia `127.0.0.1:8081`, captura los prompts de usuario en `POST /v1/messages` (`evt = "user.prompt"`) y envía todos los logs estructurados a **Loki** (`http://loki.claude-gateway-lab.internal:3100/loki/api/v1/push`).
 3. **`scripts/build_and_push_gateway.sh` + `null_resource.build_and_push_gateway_image`:**
    - Durante `terraform apply`, inmediatamente después de crear `aws_ecr_repository.gateway` y **antes** de crear `aws_ecs_service.gateway`, Terraform ejecuta `scripts/build_and_push_gateway.sh`.
    - El script asume automáticamente el rol `OrganizationAccountAccessRole` hacia la **Cuenta B**, se autentica en el registro ECR de la Cuenta B, compila la imagen `linux/amd64` y hace `docker push <ecr_repository_url>:latest`.
@@ -142,7 +143,7 @@ claude-gateway-lab/
 │   └── seed_quotas.sql.tftpl          # Seed SQL idempotente (migraciones 1..6 + $10 DevSenior / $5 DevJunior)
 ├── docker/
 │   ├── Dockerfile                     # Multi-stage build con verificacion SHA-256 del binario oficial `claude`
-│   ├── entrypoint.sh                  # Materializa $GATEWAY_CONFIG_YAML -> /etc/claude/gateway.yaml
+│   ├── entrypoint.sh                  # Copia /gateway-config/gateway.yaml -> /etc/claude/gateway.yaml
 │   └── gateway_proxy_loki.py          # Proxy async :8080 -> :8081 que captura prompts (`user.prompt`) y envia a Loki
 ├── monitoring/
 │   ├── README.md                      # Guia del stack de observabilidad (ECS Eyes + CloudWatch)
@@ -273,7 +274,8 @@ El proyecto despliega dos niveles complementarios de observabilidad en la **Cuen
   - Protegido con certificado ACM y CNAME privado en Cloudflare (`proxied = false`) hacia el mismo ALB Interno (enrutamiento Host-Header hacia el Target Group `:3000`). Solo es accesible cuando tienes Tailscale activo.
   - Credenciales iniciales de Grafana: usuario `admin`, contraseña definida en `var.grafana_admin_password`.
 - **Dashboards y Configuraciones en S3 sin límites de tamaño (`aws_s3_bucket.grafana_dashboards`):**
-  - Los dashboards (`dashboards/`) y configuraciones (`config/`: Alertmanager renderizado, YAMLs de auto-provisioning y el script `entrypoint.sh` de Grafana) se suben automáticamente a un bucket S3 privado (`force_destroy = true`).
+  - Los dashboards (`dashboards/`), las configuraciones de observabilidad (`config/`) y los archivos renderizados del Gateway (`gateway/gateway.yaml` y `gateway/seed_quotas.sql`) se suben automáticamente a un bucket S3 privado (`force_destroy = true`, objetos del Gateway cifrados con SSE-S3). Las credenciales siguen en Secrets Manager.
+  - La tarea Gateway descarga sus dos archivos `gateway/` antes del seeding y del arranque del servidor; los hashes del YAML y del SQL en la definición de ECS disparan una nueva revisión cuando cambia alguno.
   - Al iniciar la tarea ECS `claude-gateway-lab-observability`, el `initContainer` `dashboard-s3-sync` sincroniza los paneles hacia `/dashboards` y las configuraciones hacia `/etc/observability` antes de que arranquen Grafana y Alertmanager.
   - Los hashes `DASHBOARD_S3_ETAG` y `CONFIG_S3_ETAG` fuerzan el redespliegue automático de ECS ante cualquier actualización en `monitoring/`.
 - **Inspección de Prompts de Usuarios y Logs en Loki (`docker/gateway_proxy_loki.py`):**
@@ -384,7 +386,7 @@ No resources.
 | <a name="output_ecr_repository_url"></a> [ecr\_repository\_url](#output\_ecr\_repository\_url) | URL del repositorio ECR en la Cuenta B donde subir la imagen del Claude Apps Gateway. |
 | <a name="output_gateway_primary_url"></a> [gateway\_primary\_url](#output\_gateway\_primary\_url) | URL HTTPS principal del Claude Apps Gateway (accesible via Tailscale). |
 | <a name="output_gateway_secondary_url"></a> [gateway\_secondary\_url](#output\_gateway\_secondary\_url) | URL HTTPS secundaria (SAN) del Claude Apps Gateway (accesible via Tailscale). |
-| <a name="output_grafana_dashboards_s3_bucket"></a> [grafana\_dashboards\_s3\_bucket](#output\_grafana\_dashboards\_s3\_bucket) | Bucket S3 privado en la Cuenta B que almacena los dashboards JSON de Grafana. |
+| <a name="output_grafana_dashboards_s3_bucket"></a> [grafana\_dashboards\_s3\_bucket](#output\_grafana\_dashboards\_s3\_bucket) | Bucket S3 privado en la Cuenta B que almacena dashboards y configuracion de observabilidad y Gateway. |
 | <a name="output_grafana_eyes_url"></a> [grafana\_eyes\_url](#output\_grafana\_eyes\_url) | URL privada HTTPS de Grafana + Loki + Alertmanager (accesible exclusivamente con Tailscale activo). |
 | <a name="output_internal_alb_dns_name"></a> [internal\_alb\_dns\_name](#output\_internal\_alb\_dns\_name) | DNS privado del Application Load Balancer Interno en la Cuenta B. |
 | <a name="output_rds_endpoint"></a> [rds\_endpoint](#output\_rds\_endpoint) | Endpoint privado de la instancia RDS PostgreSQL 16 en la Cuenta B. |

@@ -36,6 +36,7 @@ El módulo `05-gateway-ecs` ([observability.tf](../modules/05-gateway-ecs/observ
 El bucket S3 privado `aws_s3_bucket.grafana_dashboards` actúa como repositorio central de configuración y paneles:
 - `dashboards/`: Contiene `claude-gateway-dashboard.json`.
 - `config/`: Contiene la configuración renderizada de Alertmanager (`config/alertmanager/alertmanager.yml`), los archivos de aprovisionamiento YAML de Grafana (`config/grafana/provisioning/**/*.yaml`) y el script de arranque (`config/grafana/entrypoint.sh`).
+- `gateway/`: Contiene `gateway.yaml` y `seed_quotas.sql` renderizados; la tarea Gateway los descarga mediante `gateway-config-sync` a su propio volumen antes del seeding y del servidor.
 
 Al arrancar la tarea ECS Fargate:
 1. El contenedor `dashboard-s3-sync` (`public.ecr.aws/aws-cli/aws-cli:latest`) sincroniza `s3://<bucket>/dashboards` hacia `/dashboards` (volumen `grafana-dashboards`) y `s3://<bucket>/config` hacia `/etc/observability` (volumen `observability-config`), aplicando permisos de lectura/ejecución (`chmod -R a+rX`).

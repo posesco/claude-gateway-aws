@@ -2,6 +2,8 @@
 
 Despliega el servicio principal de Claude Apps Gateway sobre Amazon ECS Fargate y Application Load Balancer (ALB) Interno con terminación TLS, el contenedor inicial de seeding de cuotas en PostgreSQL, el proxy transparente para inspección de prompts hacia Loki, y el stack de observabilidad privado (Grafana, Loki, Alertmanager con alertas SNS al 80% de consumo y Dashboard en CloudWatch).
 
+`aws_s3_bucket.grafana_dashboards` almacena también `gateway/gateway.yaml` y `gateway/seed_quotas.sql`. El contenedor `gateway-config-sync` descarga ambos objetos a un volumen compartido antes de ejecutar el SQL y arrancar el Gateway; sus credenciales continúan en Secrets Manager.
+
 ---
 
 ## Requirements
@@ -55,6 +57,8 @@ No modules.
 | [aws_s3_object.claude_gateway_dashboard](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_object) | resource |
 | [aws_s3_object.grafana_entrypoint](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_object) | resource |
 | [aws_s3_object.grafana_provisioning](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_object) | resource |
+| [aws_s3_object.gateway_config](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_object) | resource |
+| [aws_s3_object.seed_quotas_sql](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_object) | resource |
 | [aws_secretsmanager_secret.admin_write_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret.grafana_admin_password](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret.jwt_secret](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
@@ -69,8 +73,6 @@ No modules.
 | [aws_service_discovery_service.loki](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/service_discovery_service) | resource |
 | [aws_sns_topic.quota_alerts](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sns_topic) | resource |
 | [aws_sns_topic_subscription.quota_alerts_email](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/sns_topic_subscription) | resource |
-| [aws_ssm_parameter.gateway_config](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ssm_parameter) | resource |
-| [aws_ssm_parameter.seed_quotas_sql](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ssm_parameter) | resource |
 | [null_resource.build_and_push_gateway_image](https://registry.terraform.io/providers/hashicorp/null/latest/docs/resources/resource) | resource |
 | [random_password.admin_write_key](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/password) | resource |
 | [random_password.jwt_secret](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/password) | resource |
@@ -118,13 +120,13 @@ No modules.
 | <a name="output_ecs_cluster_name"></a> [ecs\_cluster\_name](#output\_ecs\_cluster\_name) | Nombre del cluster ECS Fargate en la Cuenta B |
 | <a name="output_ecs_service_name"></a> [ecs\_service\_name](#output\_ecs\_service\_name) | Nombre del servicio ECS Fargate del Gateway |
 | <a name="output_ecs_tasks_security_group_id"></a> [ecs\_tasks\_security\_group\_id](#output\_ecs\_tasks\_security\_group\_id) | ID del Security Group de las tareas ECS Fargate (usado por RDS para permitir 5432) |
-| <a name="output_gateway_config_ssm_parameter_name"></a> [gateway\_config\_ssm\_parameter\_name](#output\_gateway\_config\_ssm\_parameter\_name) | Nombre del parametro SSM que contiene el archivo gateway.yaml renderizado |
-| <a name="output_grafana_dashboards_s3_bucket"></a> [grafana\_dashboards\_s3\_bucket](#output\_grafana\_dashboards\_s3\_bucket) | Nombre del bucket S3 privado en la Cuenta B que almacena los dashboards JSON de Grafana |
+| <a name="output_gateway_config_s3_uri"></a> [gateway\_config\_s3\_uri](#output\_gateway\_config\_s3\_uri) | URI S3 del archivo gateway.yaml renderizado |
+| <a name="output_grafana_dashboards_s3_bucket"></a> [grafana\_dashboards\_s3\_bucket](#output\_grafana\_dashboards\_s3\_bucket) | Nombre del bucket S3 privado en la Cuenta B que almacena dashboards y configuracion |
 | <a name="output_internal_alb_arn"></a> [internal\_alb\_arn](#output\_internal\_alb\_arn) | ARN del Application Load Balancer Interno |
 | <a name="output_internal_alb_dns_name"></a> [internal\_alb\_dns\_name](#output\_internal\_alb\_dns\_name) | DNS name privado del Application Load Balancer Interno (destino de los CNAMEs en Cloudflare) |
 | <a name="output_internal_alb_security_group_id"></a> [internal\_alb\_security\_group\_id](#output\_internal\_alb\_security\_group\_id) | ID del Security Group del ALB Interno |
 | <a name="output_observability_ecs_service_name"></a> [observability\_ecs\_service\_name](#output\_observability\_ecs\_service\_name) | Nombre del servicio ECS Fargate de observabilidad (Grafana + Loki + Alertmanager) |
-| <a name="output_seed_quotas_ssm_parameter_name"></a> [seed\_quotas\_ssm\_parameter\_name](#output\_seed\_quotas\_ssm\_parameter\_name) | Nombre del parametro SSM que contiene el script SQL de inicializacion de topes mensuales |
+| <a name="output_seed_quotas_s3_uri"></a> [seed\_quotas\_s3\_uri](#output\_seed\_quotas\_s3\_uri) | URI S3 del script SQL de inicializacion de topes mensuales |
 
 ## Diagram
 

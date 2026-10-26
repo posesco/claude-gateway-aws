@@ -2,10 +2,23 @@
 
 En este directorio se encuentran los scripts de automatización del laboratorio:
 
-- [`tf-docs.sh`](./tf-docs.sh): Generador automático de documentación de Terraform y diagramas de arquitectura (SVG).
+- [`generate_architecture.py`](./generate_architecture.py): Modelo mantenido de la arquitectura AWS; genera `media/architecture.svg` y `media/architecture.drawio` sin consultar AWS.
+- [`tf-docs.sh`](./tf-docs.sh): Generador de tablas Terraform y grafos de recursos SVG.
 - [`build_and_push_gateway.sh`](./build_and_push_gateway.sh): Construcción multi-etapa y publicación de la imagen Docker de Claude Apps Gateway en Amazon ECR asumiendo el rol de la Cuenta B.
 
 ---
+
+## Arquitectura mantenida
+
+Desde la raíz del proyecto, actualiza `model()` en `generate_architecture.py` y regenera los dos diagramas:
+
+```bash
+python3 scripts/generate_architecture.py
+```
+
+El modelo muestra un único bucket S3 privado con los archivos `gateway/gateway.yaml` y `gateway/seed_quotas.sql`, además de los paneles y la configuración de observabilidad. Este comando solo necesita Python 3 y los iconos locales. Antes de regenerar, traslada al modelo cualquier edición manual hecha en SVG o draw.io: el script sobrescribe ambos archivos. Consulta [media/README.md](../media/README.md) para el alcance de este diagrama.
+
+`tf-docs.sh` usa `terraform-docs` o una imagen Docker para las tablas. La generación del grafo raíz ejecuta `terraform graph` en la configuración con backend; úsalo solo cuando ese acceso esté autorizado. Para una actualización estrictamente local, trabaja en una copia temporal de la configuración sin backend y con los proveedores ya instalados. Los grafos `media/*_graph.svg` representan dependencias declaradas, no recursos desplegados.
 
 # Guía de Uso: `tf-docs.sh`
 

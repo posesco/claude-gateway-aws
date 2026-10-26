@@ -35,7 +35,7 @@ La topología y las posiciones se mantienen explícitamente en `model()` de [gen
 
 Las dos AZ corresponden a la red: cada servicio ECS tiene una tarea y RDS es Single-AZ. Las subredes se agrupan por función sin sugerir réplicas de las cargas. El router usa `t4g.micro`, valor por defecto real del módulo; el ASCII anterior del README conserva la referencia histórica a `t4g.nano`.
 
-Cloudflare solo ofrece DNS y validación de ACM; el tráfico de aplicación entra por Tailscale. Bedrock se representa fuera de la VPC con endpoint `eu-west-1` y perfiles europeos, que pueden enrutar inferencia a otras regiones. Los servicios de soporte se agrupan sin dibujar cada llamada de inicialización; S3 almacena provisioning de Grafana, no los logs de Loki. Grafana consulta cuotas en RDS y CloudWatch recibe logs de los contenedores, relaciones señaladas mediante sus etiquetas.
+Cloudflare solo ofrece DNS y validación de ACM; el tráfico de aplicación entra por Tailscale. Bedrock se representa fuera de la VPC con endpoint `eu-west-1` y perfiles europeos, que pueden enrutar inferencia a otras regiones. Los servicios de soporte se agrupan sin dibujar cada llamada de inicialización; el bucket S3 privado contiene `gateway/gateway.yaml`, `gateway/seed_quotas.sql` y el aprovisionamiento de Grafana. Los logs de Loki no se almacenan en ese bucket. Grafana consulta cuotas en RDS y CloudWatch recibe logs de los contenedores, relaciones señaladas mediante sus etiquetas.
 
 ## Iconos oficiales
 
@@ -43,6 +43,6 @@ Los 19 SVG de `aws-icons/` son copias sin modificar del paquete oficial **AWS Ar
 
 - [Paquete oficial original](https://d1.awsstatic.com/onedam/marketing-channels/website/public/shared/architecture-icon-release/Icon-package_07312026.5846e92413caa21490223536cc97f1269e44fa92.zip).
 - SHA-256 del ZIP: `d2d166c453526471749d520e0db022c459abef759d2946cf2dd1d1c992dc6526`.
-- Se conserva solo el subconjunto utilizado. Los iconos y marcas pertenecen a AWS; su uso está sujeto a las condiciones publicadas por AWS, sin aplicarles una licencia nueva.
+- Se conserva un subconjunto local de iconos. Los iconos y marcas pertenecen a AWS; su uso está sujeto a las condiciones publicadas por AWS, sin aplicarles una licencia nueva.
 
 El generador inserta copias vectoriales en el SVG y datos de imagen en el `.drawio`; no depende de la biblioteca AWS instalada en el editor.

@@ -1,6 +1,6 @@
 # =============================================================================
 # MODULO 05: CLAUDE APPS GATEWAY (ECR, ALB INTERNO, ECS FARGATE, BEDROCK IAM,
-#            SSM PARAMETER STORE Y SEED AUTOMATICO DE CUOTAS EN POSTGRESQL)
+#            S3 Y SEED AUTOMATICO DE CUOTAS EN POSTGRESQL)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -134,16 +134,10 @@ resource "aws_secretsmanager_secret_version" "admin_write_key" {
 }
 
 # -----------------------------------------------------------------------------
-# 3. SSM Parameter Store (SecureString): gateway.yaml y seed_quotas.sql
+# 3. Configuracion del Gateway y seed SQL en el bucket privado compartido
 # -----------------------------------------------------------------------------
-resource "aws_ssm_parameter" "gateway_config" {
-  name        = "/${var.project_name}/gateway.yaml"
-  description = "Configuracion declarativa completa del Claude Apps Gateway (OIDC, Bedrock, Grupos y Topes)"
-  type        = "SecureString"
-  tier        = "Intelligent-Tiering"
-  overwrite   = true
-
-  value = templatefile("${path.root}/config/gateway.yaml.tftpl", {
+locals {
+  gateway_config = templatefile("${path.root}/config/gateway.yaml.tftpl", {
     gateway_fqdn             = var.gateway_fqdn
     private_subnet_cidrs     = var.private_subnet_cidrs
     cognito_issuer_url       = var.cognito_issuer_url
@@ -155,20 +149,7 @@ resource "aws_ssm_parameter" "gateway_config" {
     senior_group             = var.senior_group_name
     junior_group             = var.junior_group_name
   })
-
-  tags = {
-    Name = "${var.project_name}-gateway-yaml"
-  }
-}
-
-resource "aws_ssm_parameter" "seed_quotas_sql" {
-  name        = "/${var.project_name}/seed_quotas.sql"
-  description = "Script SQL idempotente para inicializar los topes mensuales ($10 DevSenior / $5 DevJunior) en RDS PostgreSQL"
-  type        = "SecureString"
-  tier        = "Intelligent-Tiering"
-  overwrite   = true
-
-  value = templatefile("${path.root}/config/seed_quotas.sql.tftpl", {
+  seed_quotas_sql = templatefile("${path.root}/config/seed_quotas.sql.tftpl", {
     senior_group               = var.senior_group_name
     junior_group               = var.junior_group_name
     admin_group                = var.admin_group_name
@@ -177,7 +158,27 @@ resource "aws_ssm_parameter" "seed_quotas_sql" {
     senior_monthly_limit_cents = floor(var.senior_monthly_limit_usd * 100)
     junior_monthly_limit_cents = floor(var.junior_monthly_limit_usd * 100)
   })
+}
 
+resource "aws_s3_object" "gateway_config" {
+  bucket                 = aws_s3_bucket.grafana_dashboards.id
+  key                    = "gateway/gateway.yaml"
+  content                = local.gateway_config
+  etag                   = md5(local.gateway_config)
+  content_type           = "text/yaml"
+  server_side_encryption = "AES256"
+  tags = {
+    Name = "${var.project_name}-gateway-yaml"
+  }
+}
+
+resource "aws_s3_object" "seed_quotas_sql" {
+  bucket                 = aws_s3_bucket.grafana_dashboards.id
+  key                    = "gateway/seed_quotas.sql"
+  content                = local.seed_quotas_sql
+  etag                   = md5(local.seed_quotas_sql)
+  content_type           = "text/plain"
+  server_side_encryption = "AES256"
   tags = {
     Name = "${var.project_name}-seed-quotas-sql"
   }
@@ -251,7 +252,7 @@ resource "aws_security_group" "ecs_tasks" {
   }
 
   egress {
-    description = "Salida HTTPS (443) hacia Amazon Bedrock, Cognito OIDC (Cuenta A), ECR, SSM, S3, SNS y Secrets Manager"
+    description = "Salida HTTPS (443) hacia Amazon Bedrock, Cognito OIDC (Cuenta A), ECR, S3, SNS y Secrets Manager"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -382,19 +383,7 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
         ]
       },
       {
-        Sid    = "ReadSSMParameters"
-        Effect = "Allow"
-        Action = [
-          "ssm:GetParameters",
-          "ssm:GetParameter"
-        ]
-        Resource = [
-          aws_ssm_parameter.gateway_config.arn,
-          aws_ssm_parameter.seed_quotas_sql.arn
-        ]
-      },
-      {
-        Sid      = "DecryptKMSForSecretsAndSSM"
+        Sid      = "DecryptKMSForSecrets"
         Effect   = "Allow"
         Action   = ["kms:Decrypt"]
         Resource = ["*"]
@@ -481,23 +470,60 @@ resource "aws_ecs_task_definition" "gateway" {
   execution_role_arn       = aws_iam_role.ecs_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
+  volume {
+    name = "gateway-config"
+  }
+
   container_definitions = jsonencode([
+    {
+      name       = "gateway-config-sync"
+      image      = "public.ecr.aws/aws-cli/aws-cli:latest"
+      essential  = false
+      entryPoint = ["/bin/sh", "-c"]
+      command = [
+        "aws s3 cp s3://${aws_s3_bucket.grafana_dashboards.id}/${aws_s3_object.gateway_config.key} /gateway-config/gateway.yaml --region ${var.aws_region} --only-show-errors && aws s3 cp s3://${aws_s3_bucket.grafana_dashboards.id}/${aws_s3_object.seed_quotas_sql.key} /gateway-config/seed_quotas.sql --region ${var.aws_region} --only-show-errors && chmod -R a+rX /gateway-config && test -s /gateway-config/gateway.yaml && test -s /gateway-config/seed_quotas.sql"
+      ]
+      mountPoints = [
+        {
+          sourceVolume  = "gateway-config"
+          containerPath = "/gateway-config"
+          readOnly      = false
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "gateway-config-sync"
+        }
+      }
+    },
     {
       name       = "db-quota-seeder"
       image      = "public.ecr.aws/docker/library/postgres:16-alpine"
       essential  = false
       entryPoint = ["/bin/sh", "-c"]
       command = [
-        "echo 'Ejecutando seed idempotente de topes mensuales ($10 DevSenior / $5 DevJunior) en RDS PostgreSQL...' && printf '%s\\n' \"$SEED_QUOTAS_SQL\" | psql \"$GATEWAY_POSTGRES_URL\" -v ON_ERROR_STOP=1 && echo 'Topes inicializados correctamente.'"
+        "echo 'Ejecutando seed idempotente de topes mensuales ($10 DevSenior / $5 DevJunior) en RDS PostgreSQL...' && psql \"$GATEWAY_POSTGRES_URL\" -v ON_ERROR_STOP=1 -f /gateway-config/seed_quotas.sql && echo 'Topes inicializados correctamente.'"
+      ]
+      dependsOn = [
+        {
+          containerName = "gateway-config-sync"
+          condition     = "SUCCESS"
+        }
+      ]
+      mountPoints = [
+        {
+          sourceVolume  = "gateway-config"
+          containerPath = "/gateway-config"
+          readOnly      = true
+        }
       ]
       secrets = [
         {
           name      = "GATEWAY_POSTGRES_URL"
           valueFrom = var.postgres_url_secret_arn
-        },
-        {
-          name      = "SEED_QUOTAS_SQL"
-          valueFrom = aws_ssm_parameter.seed_quotas_sql.arn
         }
       ]
       logConfiguration = {
@@ -517,6 +543,13 @@ resource "aws_ecs_task_definition" "gateway" {
         {
           containerName = "db-quota-seeder"
           condition     = "SUCCESS"
+        }
+      ]
+      mountPoints = [
+        {
+          sourceVolume  = "gateway-config"
+          containerPath = "/gateway-config"
+          readOnly      = true
         }
       ]
       portMappings = [
@@ -545,14 +578,14 @@ resource "aws_ecs_task_definition" "gateway" {
         },
         {
           name  = "GATEWAY_CONFIG_SHA256"
-          value = sha256(aws_ssm_parameter.gateway_config.value)
+          value = sha256(local.gateway_config)
+        },
+        {
+          name  = "SEED_QUOTAS_SHA256"
+          value = sha256(local.seed_quotas_sql)
         }
       ]
       secrets = [
-        {
-          name      = "GATEWAY_CONFIG_YAML"
-          valueFrom = aws_ssm_parameter.gateway_config.arn
-        },
         {
           name      = "GATEWAY_POSTGRES_URL"
           valueFrom = var.postgres_url_secret_arn
@@ -584,6 +617,8 @@ resource "aws_ecs_task_definition" "gateway" {
   tags = {
     Name = "${var.project_name}-gateway-taskdef"
   }
+
+  depends_on = [aws_iam_role_policy.ecs_task_sns_alerts]
 }
 
 resource "aws_ecs_service" "gateway" {

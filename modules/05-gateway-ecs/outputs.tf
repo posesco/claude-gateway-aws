@@ -33,14 +33,14 @@ output "internal_alb_security_group_id" {
   value       = aws_security_group.internal_alb.id
 }
 
-output "gateway_config_ssm_parameter_name" {
-  description = "Nombre del parametro SSM que contiene el archivo gateway.yaml renderizado"
-  value       = aws_ssm_parameter.gateway_config.name
+output "gateway_config_s3_uri" {
+  description = "URI S3 del archivo gateway.yaml renderizado"
+  value       = "s3://${aws_s3_bucket.grafana_dashboards.id}/${aws_s3_object.gateway_config.key}"
 }
 
-output "seed_quotas_ssm_parameter_name" {
-  description = "Nombre del parametro SSM que contiene el script SQL de inicializacion de topes mensuales"
-  value       = aws_ssm_parameter.seed_quotas_sql.name
+output "seed_quotas_s3_uri" {
+  description = "URI S3 del script SQL de inicializacion de topes mensuales"
+  value       = "s3://${aws_s3_bucket.grafana_dashboards.id}/${aws_s3_object.seed_quotas_sql.key}"
 }
 
 output "cloudwatch_dashboard_name" {
@@ -59,6 +59,6 @@ output "observability_ecs_service_name" {
 }
 
 output "grafana_dashboards_s3_bucket" {
-  description = "Nombre del bucket S3 privado en la Cuenta B que almacena los dashboards JSON de Grafana"
+  description = "Nombre del bucket S3 privado en la Cuenta B que almacena dashboards y configuracion"
   value       = aws_s3_bucket.grafana_dashboards.id
 }

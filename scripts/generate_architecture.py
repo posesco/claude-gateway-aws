@@ -51,7 +51,7 @@ def model():
     label("title", 45, 39, "Claude Apps Gateway · arquitectura AWS multi-cuenta",
           30, bold=True, align="start")
     label("subtitle", 45, 70,
-          "Arquitectura declarada en Terraform · valores por defecto · despliegue no verificado",
+          "Arquitectura declarada en Terraform",
           18, GREY, align="start")
     box("identity-account", 320, 105, 1110, 255)
     icon("identity-badge", 332, 117, "AWS-Account_32.svg", 32)
@@ -85,7 +85,7 @@ def model():
     service("router", 520, 595, "Arch_Amazon-EC2_64.svg", "EC2 · Tailscale",
             "Subnet router · t4g.micro", "Anuncia 10.20.0.0/16", "Primera subred pública", "SG sin ingress")
     service("gateway", 870, 595, "Arch_AWS-Fargate_64.svg", "Gateway · ECS Fargate",
-            "1 tarea · 0.25 vCPU / 512 MiB", "Init: db-quota-seeder", "Proxy :8080 → gateway :8081",
+            "1 tarea · 0.25 vCPU / 512 MiB", "Init: S3 sync + SQL seeder", "Proxy :8080 → gateway :8081",
             "IP pública para salida", "Ingress :8080 solo desde ALB")
     service("observability", 1220, 595, "Arch_AWS-Fargate_64.svg", "Observabilidad · Fargate",
             "1 tarea · 0.5 vCPU / 1 GiB", "Init: dashboard-s3-sync", "Grafana + Loki + Alertmanager",
@@ -115,10 +115,9 @@ def model():
           20, bold=True, align="start")
     support = [
         ("ecr", 500, "Arch_Amazon-Elastic-Container-Registry_64.svg", "Amazon ECR", "Imagen del gateway"),
-        ("ssm", 730, "Arch_AWS-Systems-Manager_64.svg", "SSM Parameter Store", "gateway.yaml + SQL"),
-        ("secrets", 960, "Arch_AWS-Secrets-Manager_64.svg", "Secrets Manager", "Credenciales / claves"),
-        ("s3", 1190, "Arch_Amazon-Simple-Storage-Service_64.svg", "Amazon S3", "Provisioning de Grafana"),
-        ("cloudmap", 1420, "Arch_AWS-Cloud-Map_64.svg", "AWS Cloud Map", "DNS privado de Loki"),
+        ("secrets", 787, "Arch_AWS-Secrets-Manager_64.svg", "Secrets Manager", "Credenciales / claves"),
+        ("s3", 1074, "Arch_Amazon-Simple-Storage-Service_64.svg", "Amazon S3", "Gateway YAML/SQL + Grafana"),
+        ("cloudmap", 1361, "Arch_AWS-Cloud-Map_64.svg", "AWS Cloud Map", "DNS privado de Loki"),
         ("acm", 1650, "Arch_AWS-Certificate-Manager_64.svg", "AWS ACM", "TLS del ALB")]
     for key, cx, filename, title, detail in support:
         service(key, cx, 1260, filename, title, detail)

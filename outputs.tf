@@ -112,6 +112,6 @@ output "alertmanager_sns_topic_arn" {
 }
 
 output "grafana_dashboards_s3_bucket" {
-  description = "Bucket S3 privado en la Cuenta B que almacena los dashboards JSON de Grafana."
+  description = "Bucket S3 privado en la Cuenta B que almacena dashboards y configuracion de observabilidad y Gateway."
   value       = module.gateway_ecs.grafana_dashboards_s3_bucket
 }

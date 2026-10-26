@@ -2,17 +2,16 @@
 set -eu
 
 CONFIG_PATH="/etc/claude/gateway.yaml"
+S3_CONFIG_PATH="/gateway-config/gateway.yaml"
 
-# Si ECS Fargate inyecta GATEWAY_CONFIG_YAML desde AWS SSM Parameter Store,
-# materializamos el archivo declarativo en /etc/claude/gateway.yaml antes de arrancar.
-if [ -n "${GATEWAY_CONFIG_YAML:-}" ]; then
-  printf '%s\n' "$GATEWAY_CONFIG_YAML" > "$CONFIG_PATH"
-fi
-
-if [ ! -s "$CONFIG_PATH" ]; then
-  echo "ERROR: No se encontro configuracion valida en $CONFIG_PATH ni en la variable GATEWAY_CONFIG_YAML." >&2
+if [ ! -s "$S3_CONFIG_PATH" ]; then
+  echo "ERROR: No se encontro configuracion valida en $S3_CONFIG_PATH." >&2
   exit 1
 fi
+
+# La copia conserva el archivo fuente del volumen S3 y permite modificar el puerto
+# en el directorio escribible por el usuario del Gateway (UID 65532).
+cp "$S3_CONFIG_PATH" "$CONFIG_PATH"
 
 # Reasignamos el puerto interno de claude gateway a 8081 para que gateway_proxy_loki.py
 # escuche en 0.0.0.0:8080, capture los prompts (POST /v1/messages) hacia Loki y reenvie el trafico.
