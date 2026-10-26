@@ -1,0 +1,22 @@
+#!/bin/bash
+set -euxo pipefail
+
+# 1. Habilitar IPv4 e IPv6 Packet Forwarding para actuar como Subnet Router
+cat <<'EOF' > /etc/sysctl.d/99-tailscale.conf
+net.ipv4.ip_forward = 1
+net.ipv6.conf.all.forwarding = 1
+EOF
+sysctl -p /etc/sysctl.d/99-tailscale.conf
+
+# 2. Instalar Tailscale en Amazon Linux 2023 (ARM64)
+curl -fsSL https://tailscale.com/install.sh | sh
+
+# 3. Habilitar y arrancar el demonio tailscaled
+systemctl enable --now tailscaled
+
+# 4. Autenticar el nodo de forma desatendida y anunciar el CIDR de la VPC
+tailscale up \
+  --authkey="${tailscale_auth_key}" \
+  --advertise-routes="${vpc_cidr}" \
+  --hostname="${tailscale_hostname}" \
+  --accept-dns=false

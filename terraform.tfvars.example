@@ -1,0 +1,59 @@
+# =============================================================================
+# EJEMPLO DE VARIABLES (Copia este archivo a terraform.tfvars antes de aplicar)
+# cp terraform.tfvars.example terraform.tfvars
+# =============================================================================
+
+aws_region              = "eu-west-1"
+project_name            = "claude-gateway-lab"
+environment             = "lab"
+domain_name             = "mipropiodominio.com"
+primary_subdomain       = "aidevtool"
+secondary_subdomain     = "dev"
+observability_subdomain = "eyes"
+alert_email             = "alertas@mipropiodominio.com"
+
+# -----------------------------------------------------------------------------
+# Credenciales de Cloudflare y Tailscale
+# -----------------------------------------------------------------------------
+cloudflare_zone_id   = "REEMPLAZAR_CON_TU_CLOUDFLARE_ZONE_ID"
+cloudflare_api_token = "REEMPLAZAR_CON_TU_CLOUDFLARE_API_TOKEN"
+tailscale_auth_key   = "tskey-auth-REEMPLAZAR_CON_TU_TAILSCALE_AUTH_KEY"
+
+# -----------------------------------------------------------------------------
+# Configuracion Multi-Cuenta (Cuenta A Management -> Cuenta B Workload)
+# -----------------------------------------------------------------------------
+# Si create_workload_account = true, Terraform creara una nueva cuenta miembro
+# en AWS Organizations usando workload_account_email.
+# Si ya tienes creada la Cuenta B en tu Organizacion, pon false e indica su ID.
+create_workload_account       = false
+existing_workload_account_id  = "123456789012"
+workload_account_email        = "awsworkload@mipropiodominio.com"
+workload_account_name         = "claude-gateway-workload"
+organization_access_role_name = "OrganizationAccountAccessRole"
+close_on_deletion             = false
+
+# -----------------------------------------------------------------------------
+# Usuarios OIDC en Amazon Cognito (Cuenta A) y Topes Mensuales por Grupo
+# -----------------------------------------------------------------------------
+initial_user_password    = "AquiVaUnPassword2026MuySeguro"
+admin_user_email         = "admin@mipropiodominio.com"
+senior_user_email        = "senior@mipropiodominio.com"
+junior_user_email        = "junior@mipropiodominio.com"
+senior_monthly_limit_usd = 10.00
+junior_monthly_limit_usd = 5.00
+
+additional_cognito_users = {}
+cognito_lambda_runtime   = "python3.14"
+
+# -----------------------------------------------------------------------------
+# Red y Base de Datos en Cuenta B (Workload)
+# -----------------------------------------------------------------------------
+vpc_cidr             = "10.20.0.0/16"
+public_subnet_cidrs  = ["10.20.1.0/24", "10.20.2.0/24"]
+private_subnet_cidrs = ["10.20.11.0/24", "10.20.12.0/24"]
+db_name                  = "claudegateway"
+db_username              = "gwadmin"
+gateway_image_uri        = ""
+auto_build_gateway_image = true
+claude_binary_version    = "latest"
+grafana_admin_password   = "AquiVaUnPasswordAdminGrafanaMuySeguro"

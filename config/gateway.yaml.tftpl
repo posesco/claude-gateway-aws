@@ -1,0 +1,87 @@
+listen:
+  host: 0.0.0.0
+  port: 8080
+  public_url: https://${gateway_fqdn}
+  trusted_proxies:
+    - 127.0.0.1/32
+%{ for cidr in private_subnet_cidrs ~}
+    - ${cidr}
+%{ endfor ~}
+oidc:
+  issuer: ${cognito_issuer_url}
+  client_id: ${cognito_client_id}
+  client_secret: $${OIDC_CLIENT_SECRET}
+  groups_claim: "groups"
+  userinfo_fallback: true
+  scopes: [openid, email, profile]
+session:
+  jwt_secret: $${GATEWAY_JWT_SECRET}
+  ttl_hours: 8
+store:
+  postgres_url: $${GATEWAY_POSTGRES_URL}
+  max_connections: 10
+  readiness_grace_seconds: 30
+upstreams:
+  - provider: bedrock
+    region: ${aws_region}
+    auth: {}
+auto_include_builtin_models: false
+models:
+  - id: claude-sonnet-4-6
+    label: "Claude Sonnet 4.6"
+    upstream_model: { bedrock: eu.anthropic.claude-sonnet-4-6 }
+  - id: claude-opus-4-6
+    label: "Claude Opus 4.6"
+    upstream_model: { bedrock: eu.anthropic.claude-opus-4-6-v1 }
+  - id: claude-haiku-4-5
+    label: "Claude Haiku 4.5"
+    upstream_model: { bedrock: "eu.anthropic.claude-haiku-4-5-20251001-v1:0" }
+  - id: eu.anthropic.claude-sonnet-4-6
+    label: "Claude Sonnet 4.6 (EU)"
+    upstream_model: { bedrock: eu.anthropic.claude-sonnet-4-6 }
+  - id: eu.anthropic.claude-opus-4-6-v1
+    label: "Claude Opus 4.6 (EU)"
+    upstream_model: { bedrock: eu.anthropic.claude-opus-4-6-v1 }
+  - id: "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+    label: "Claude Haiku 4.5 (EU)"
+    upstream_model: { bedrock: "eu.anthropic.claude-haiku-4-5-20251001-v1:0" }
+  - id: anthropic.claude-sonnet-4-6
+    label: "Claude Sonnet 4.6"
+    upstream_model: { bedrock: eu.anthropic.claude-sonnet-4-6 }
+  - id: anthropic.claude-opus-4-6-v1
+    label: "Claude Opus 4.6"
+    upstream_model: { bedrock: eu.anthropic.claude-opus-4-6-v1 }
+  - id: "anthropic.claude-haiku-4-5-20251001-v1:0"
+    label: "Claude Haiku 4.5"
+    upstream_model: { bedrock: "eu.anthropic.claude-haiku-4-5-20251001-v1:0" }
+admin:
+  admin_groups: ["${admin_group}"]
+  group_limit_mode: max
+  blocked_message: "Limite mensual alcanzado (${format("%.2f", senior_monthly_limit_usd)} USD DevSenior / ${format("%.2f", junior_monthly_limit_usd)} USD DevJunior). Contacta a ${admin_group}."
+  write_keys:
+    - id: terraform-seed
+      key: $${GATEWAY_ADMIN_WRITE_KEY}
+enforcement:
+  fail_closed_on_error: true
+managed:
+  policies:
+    - match: { groups: ["${admin_group}"] }
+      cli:
+        enforceAvailableModels: true
+        model: claude-sonnet-4-6
+        availableModels: [claude-sonnet-4-6, claude-opus-4-6, claude-haiku-4-5]
+    - match: { groups: ["${senior_group}"] }
+      cli:
+        enforceAvailableModels: true
+        model: claude-sonnet-4-6
+        availableModels: [claude-sonnet-4-6, claude-opus-4-6, claude-haiku-4-5]
+    - match: { groups: ["${junior_group}"] }
+      cli:
+        enforceAvailableModels: true
+        model: claude-sonnet-4-6
+        availableModels: [claude-sonnet-4-6, claude-haiku-4-5]
+    - match: {}
+      cli:
+        enforceAvailableModels: true
+        model: claude-haiku-4-5
+        availableModels: [claude-haiku-4-5]

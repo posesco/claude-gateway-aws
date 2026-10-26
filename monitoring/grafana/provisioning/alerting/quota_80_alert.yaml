@@ -1,0 +1,85 @@
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: alertmanager-sns-email
+    receivers:
+      - uid: alertmanager_sns_receiver
+        type: prometheus-alertmanager
+        settings:
+          url: http://localhost:9093
+        disableResolveMessage: false
+
+policies:
+  - orgId: 1
+    receiver: alertmanager-sns-email
+    group_by: ['alertname', 'email', 'grupo']
+    group_wait: 10s
+    group_interval: 5m
+    repeat_interval: 4h
+
+groups:
+  - orgId: 1
+    name: claude-gateway-quota-guardrails
+    folder: Claude Gateway
+    interval: 1m
+    rules:
+      - uid: claude_quota_80_pct_rule
+        title: "Usuario al >=80% de su Cuota Mensual en Claude Gateway"
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: OK
+        annotations:
+          summary: "El desarrollador {{ $labels.email }} ({{ $labels.grupo }}) ha superado el 80% de su cuota mensual."
+          description: "Consumo actual al {{ $values.B }}% del tope mensual asignado ($10 DevSenior / $5 DevJunior)."
+        labels:
+          severity: warning
+          service: claude-gateway
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: claude-gateway-db
+            model:
+              format: table
+              rawQuery: true
+              rawSql: >
+                SELECT
+                  p.email AS email,
+                  COALESCE(g.group_name, 'DevJunior') AS grupo,
+                  ROUND(((COALESCE(SUM(s.cents), 0) / NULLIF(COALESCE(g.monthly_limit_cents, 500), 0)) * 100.0)::numeric, 2) AS usage_pct
+                FROM principal_emails p
+                LEFT JOIN group_quotas g ON g.group_name = CASE
+                  WHEN COALESCE(p.groups::text, '') LIKE '%DevSenior%' OR p.email LIKE '%senior%' THEN 'DevSenior'
+                  WHEN COALESCE(p.groups::text, '') LIKE '%DevJunior%' OR p.email LIKE '%junior%' THEN 'DevJunior'
+                  ELSE 'claude-gateway-admins'
+                END
+                LEFT JOIN spend s ON s.principal = p.principal
+                  AND s.period = to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM')
+                GROUP BY p.email, g.group_name, g.monthly_limit_cents
+                HAVING ((COALESCE(SUM(s.cents), 0) / NULLIF(COALESCE(g.monthly_limit_cents, 500), 0)) * 100.0) >= 80.0;
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [79.99]
+              refId: C

@@ -1,0 +1,26 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'email', 'grupo']
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'sns-quota-email'
+
+receivers:
+  - name: 'sns-quota-email'
+    sns_configs:
+      - topic_arn: '${sns_topic_arn}'
+        sigv4:
+          region: '${aws_region}'
+        subject: '⚠️ [Claude Gateway] Usuario al >=80% de su cuota mensual'
+        message: |
+          Alerta de Consumo en Claude Apps Gateway (${observability_fqdn})
+          ------------------------------------------------------------------
+          {{ range .Alerts -}}
+          Resumen: {{ .Annotations.summary }}
+          Detalle: {{ .Annotations.description }}
+          Estado:  {{ .Status | toUpper }}
+          Panel:   https://${observability_fqdn}
+          {{ end -}}

@@ -1,0 +1,26 @@
+BEGIN;
+DO $$ BEGIN
+IF NOT EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name='spend_limits' AND column_name='scope_id') THEN
+DROP TABLE IF EXISTS spend_limits,admin_audit,group_quotas CASCADE;
+END IF;
+END $$;
+CREATE TABLE IF NOT EXISTS _migrations(version INT PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY,value TEXT NOT NULL,expires_at TIMESTAMPTZ);
+CREATE INDEX IF NOT EXISTS kv_expires_at ON kv(expires_at) WHERE expires_at IS NOT NULL;
+CREATE TABLE IF NOT EXISTS spend_limits(id TEXT PRIMARY KEY,scope_type TEXT NOT NULL CHECK(scope_type IN('user','rbac_group','organization')),scope_id TEXT NOT NULL DEFAULT '',amount BIGINT,period TEXT NOT NULL DEFAULT 'monthly' CHECK(period IN('daily','weekly','monthly')),currency TEXT NOT NULL DEFAULT 'USD' CHECK(currency='USD'),created_at TIMESTAMPTZ NOT NULL DEFAULT now(),updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),created_by TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS spend_limits_scope ON spend_limits(scope_type,scope_id,period);
+CREATE OR REPLACE FUNCTION caps_by_period(p_principal text,p_groups text[],p_mode text) RETURNS TABLE(period text,amount bigint,scope_type text,scope_id text,id text) LANGUAGE sql STABLE AS $$
+SELECT DISTINCT ON(period) period,amount,scope_type,scope_id,id FROM spend_limits WHERE(scope_type='user' AND scope_id=p_principal) OR(scope_type='rbac_group' AND scope_id=ANY(p_groups)) OR scope_type='organization' ORDER BY period,CASE scope_type WHEN 'user' THEN 0 WHEN 'rbac_group' THEN 1 ELSE 2 END,(amount IS NULL)=(p_mode='min'),CASE WHEN scope_type='rbac_group' THEN CASE WHEN p_mode='min' THEN amount ELSE -amount END END,id
+$$;
+CREATE TABLE IF NOT EXISTS admin_audit(id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,at TIMESTAMPTZ NOT NULL DEFAULT now(),actor TEXT NOT NULL,action TEXT NOT NULL,target TEXT NOT NULL,before JSONB,after JSONB,reason TEXT);
+CREATE INDEX IF NOT EXISTS admin_audit_at ON admin_audit(at);
+CREATE TABLE IF NOT EXISTS spend(principal TEXT NOT NULL,period TEXT NOT NULL,cents DOUBLE PRECISION NOT NULL DEFAULT 0,updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),PRIMARY KEY(principal,period));
+CREATE INDEX IF NOT EXISTS spend_updated_at ON spend(updated_at);
+CREATE TABLE IF NOT EXISTS principal_emails(principal TEXT PRIMARY KEY,email TEXT,name TEXT,groups JSONB,updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS principal_emails_updated_at ON principal_emails(updated_at);
+CREATE INDEX IF NOT EXISTS spend_period_cents ON spend(period,cents DESC,principal);
+INSERT INTO _migrations(version) VALUES(1),(2),(3),(4),(5),(6) ON CONFLICT(version) DO NOTHING;
+INSERT INTO spend_limits(id,scope_type,scope_id,amount,period,currency,created_by) VALUES('spl_group_devsenior_monthly','rbac_group','${senior_group}',${senior_monthly_limit_cents},'monthly','USD','admin-key:terraform-seed'),('spl_group_devjunior_monthly','rbac_group','${junior_group}',${junior_monthly_limit_cents},'monthly','USD','admin-key:terraform-seed') ON CONFLICT(scope_type,scope_id,period) DO UPDATE SET amount=EXCLUDED.amount,updated_at=now();
+CREATE TABLE IF NOT EXISTS group_quotas(group_name TEXT PRIMARY KEY,monthly_limit_cents INT NOT NULL);
+INSERT INTO group_quotas VALUES('${senior_group}',${senior_monthly_limit_cents}),('${junior_group}',${junior_monthly_limit_cents}),('${admin_group}',10000) ON CONFLICT(group_name) DO UPDATE SET monthly_limit_cents=EXCLUDED.monthly_limit_cents;
+COMMIT;
