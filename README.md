@@ -1,4 +1,4 @@
-# Laboratorio Multi-Cuenta de Claude Apps Gateway en AWS (`claude-gateway-lab`)
+# Laboratorio Multi-Cuenta de Claude Apps Gateway en AWS
 
 Infraestructura como Código (100% **Terraform**) para desplegar el **Claude Apps Gateway for AWS** de Anthropic bajo una arquitectura **Multi-Cuenta real** en la región **`eu-west-1` (Irlanda)**, con autenticación federada OIDC en **Amazon Cognito**, control de gasto mensual por grupo en **RDS PostgreSQL** (**$10/mes** para `DevSenior` y **$5/mes** para `DevJunior`), acceso estrictamente privado mediante **Tailscale Subnet Router**, validación TLS con **Cloudflare DNS + AWS ACM** y **coste $0 en NAT Gateways**.
 
@@ -59,8 +59,6 @@ Infraestructura como Código (100% **Terraform**) para desplegar el **Claude App
 ```
 
 ![Arquitectura AWS multi-cuenta: Cognito, acceso privado Tailscale, ALB interno, gateway ECS Fargate, RDS, Bedrock y observabilidad](media/architecture.svg)
-
-[Abrir a tamaño completo](media/architecture.svg) · [Editar en draw.io](media/architecture.drawio) · [Cómo editar y regenerar](media/README.md)
 
 El diagrama representa la arquitectura declarada en Terraform y sus valores por defecto. Para regenerar el SVG y el archivo editable: `python3 scripts/generate_architecture.py`.
 
